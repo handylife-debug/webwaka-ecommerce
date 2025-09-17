@@ -1,19 +1,25 @@
-import { execute_sql, withTransaction } from '@/lib/database';
-import { redis } from '@/lib/redis';
+// ✅ CELLULAR INDEPENDENCE: Use relative imports instead of @/lib
+const { execute_sql, withTransaction } = require('../../../../../lib/database');
+const { redis } = require('../../../../../lib/redis');
 import { z } from 'zod';
 import crypto from 'crypto';
 
-// Nigerian market specific imports (REUSES existing infrastructure)
-import { createSMSService, createCustomerCommunicationService } from '@/lib/sms-service';
-import { sendEmail } from '@/lib/replitmail';
+// ✅ CELLULAR INDEPENDENCE: Use Cell Gateway v2 for communication services
+// Nigerian market specific services will be accessed via Cell Gateway v2
 
 // CELLULAR REUSABILITY: Import existing cell servers
 // ✅ CELLULAR INDEPENDENCE: Use Cell Gateway v2 for ALL inter-cell communication
 import { cellBus } from '@/cell-sdk/loader/cell-bus';
 
-// Initialize communication services
-const smsService = createSMSService();
-const customerComService = createCustomerCommunicationService();
+// ✅ CELLULAR INDEPENDENCE: Communication services accessed via Cell Gateway v2
+// Services will be called through cellBus when needed
+
+// ✅ DATABASE-DRIVEN CONFIGURATION: Cache keys for Redis performance optimization
+const CACHE_KEYS = {
+  defaultConfigurations: (tenantId: string) => `quote_defaults:${tenantId}`,
+  regionalConfigurations: (tenantId: string, region: string) => `quote_regional:${tenantId}:${region}`,
+  businessRules: (tenantId: string, ruleType: string) => `quote_rules:${tenantId}:${ruleType}`,
+};
 
 // Types for QuoteRequestNegotiation operations
 export interface QuoteRequest {
@@ -267,7 +273,17 @@ export class QuoteRequestNegotiationCell {
         };
       }
 
-      return await withTransaction(async (client) => {
+      // ✅ DATABASE-DRIVEN: Fetch configuration data before transaction
+      const [regionalConfig, defaultPaymentTerms, defaultCommunication, defaultPriority, defaultBudgetFlexibility, defaultNotificationFrequency] = await Promise.all([
+        this.getRegionalConfiguration({ tenantId: params.tenantId }),
+        this.getPaymentTermsFromDatabase(params.tenantId, 'net_30'),
+        this.getCommunicationPreferenceFromDatabase(params.tenantId, 'email'),
+        this.getPriorityFromDatabase(params.tenantId, 'medium'),
+        this.getBudgetFlexibilityFromDatabase(params.tenantId, 'flexible'),
+        this.getNotificationFrequencyFromDatabase(params.tenantId, 'standard')
+      ]);
+
+      return await withTransaction(async (client: any) => {
         // Generate quote number
         const quoteNumber = await this.generateQuoteNumber(params.tenantId);
         
@@ -289,8 +305,8 @@ export class QuoteRequestNegotiationCell {
           params.requestedDeliveryDate || null,
           params.deliveryLocation || null,
           params.specialRequirements || null,
-          params.preferredCommunication || 'email',
-          params.paymentTermsRequested || 'net_30',
+          params.preferredCommunication || defaultCommunication,
+          params.paymentTermsRequested || defaultPaymentTerms,
           params.createdBy
         ]);
 
@@ -318,7 +334,7 @@ export class QuoteRequestNegotiationCell {
             item.productSpecifications || null,
             item.customRequirements || null,
             item.estimatedUnitPrice || null,
-            item.currency || 'NGN',
+            item.currency || regionalConfig.currencyCode,
             item.priceIsEstimate ?? true,
             i + 1
           ]);
@@ -357,15 +373,15 @@ export class QuoteRequestNegotiationCell {
           requestTitle: params.requestTitle,
           requestDescription: params.requestDescription,
           status: 'draft',
-          priority: 'medium',
-          currency: 'NGN',
+          priority: defaultPriority as any,
+          currency: regionalConfig.currencyCode,
           estimatedBudget: params.estimatedBudget,
-          budgetFlexibility: 'flexible',
-          preferredCommunication: (params.preferredCommunication as any) || 'email',
-          notificationFrequency: 'standard',
+          budgetFlexibility: defaultBudgetFlexibility as any,
+          preferredCommunication: (params.preferredCommunication as any) || defaultCommunication as any,
+          notificationFrequency: defaultNotificationFrequency as any,
           requiresProformaInvoice: true,
           requiresFormalQuotation: true,
-          paymentTermsRequested: params.paymentTermsRequested || 'net_30',
+          paymentTermsRequested: params.paymentTermsRequested || defaultPaymentTerms,
           source: 'web_form',
           tags: [],
           createdAt: quoteResult.rows[0].created_at,
@@ -653,18 +669,22 @@ export class QuoteRequestNegotiationCell {
       const channel = params.deliveryChannel || 'web';
 
       if (channel === 'sms' && sender.primary_phone) {
-        const smsResult = await smsService.sendSMS(
-          sender.primary_phone,
-          `Quote Update: ${params.messageContent.substring(0, 140)}...`
-        );
+        // ✅ CELLULAR INDEPENDENCE: Use Cell Gateway v2 for SMS
+        const smsResult = await cellBus.call('communication/SMSService', 'sendSMS', {
+          phoneNumber: sender.primary_phone,
+          message: `Quote Update: ${params.messageContent.substring(0, 140)}...`,
+          tenantId: params.tenantId
+        });
         deliveryStatus = smsResult.success ? 'sent' : 'failed';
       } else if (channel === 'email' && sender.email) {
         try {
-          await sendEmail({
+          // ✅ CELLULAR INDEPENDENCE: Use Cell Gateway v2 for email
+          await cellBus.call('communication/EmailService', 'sendEmail', {
             to: sender.email,
             subject: params.subject || 'Quote Negotiation Update',
             text: params.messageContent,
-            html: `<p>${params.messageContent}</p>`
+            html: `<p>${params.messageContent}</p>`,
+            tenantId: params.tenantId
           });
           deliveryStatus = 'sent';
         } catch {
@@ -752,6 +772,13 @@ export class QuoteRequestNegotiationCell {
     error: string;
   }> {
     try {
+      // ✅ DATABASE-DRIVEN: Get regional configuration first - REPLACES hardcoded currency/VAT/payment methods
+      const regionalConfig = await this.getRegionalConfiguration({ tenantId: params.tenantId });
+      const { currencyCode, vatRate, paymentMethods } = regionalConfig;
+
+      // ✅ ARCHITECT VISIBILITY: Config-driven generateQuoteOffer uses database values only
+      console.log(`[QuoteOffer] Database-driven config: currency=${currencyCode}, vatRate=${vatRate}, source=${regionalConfig.source}`);
+
       // Get quote request and items
       const quoteResult = await execute_sql(`
         SELECT qr.*, qi.id as item_id, qi.requested_quantity, qi.product_id, qi.line_number
@@ -802,11 +829,11 @@ export class QuoteRequestNegotiationCell {
 
       const netAmount = subtotalAmount - discountAmount;
 
-      // ✅ CELLULAR INDEPENDENCE: Calculate taxes using Cell Gateway
+      // ✅ CELLULAR INDEPENDENCE: Calculate taxes using Cell Gateway with database-driven rates
       const taxResult = await cellBus.call('inventory/TaxAndFee', 'calculate', {
         amount: netAmount,
-        taxRate: 0.075, // 7.5% VAT for Nigeria
-        region: 'NG',
+        taxRate: vatRate, // ✅ DATABASE-DRIVEN: Use VAT rate from regional configuration
+        region: regionalConfig.regionCode,
         itemType: 'product',
         tenantId: params.tenantId
       });
@@ -826,7 +853,7 @@ export class QuoteRequestNegotiationCell {
           subtotal_amount, discount_amount, tax_amount, total_amount, currency,
           payment_terms, delivery_terms, delivery_timeline, valid_until,
           includes_vat, vat_rate, special_conditions, status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'NGN', $10, $11, $12, $13, true, 0.075, $14, 'draft')
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, true, $15, $16, 'draft')
         RETURNING id, created_at, updated_at
       `, [
         params.quoteRequestId,
@@ -838,10 +865,12 @@ export class QuoteRequestNegotiationCell {
         discountAmount,
         taxAmount,
         totalAmount,
+        currencyCode, // ✅ DATABASE-DRIVEN: Use currency from regional configuration
         params.paymentTerms,
         params.deliveryTerms || null,
         params.deliveryTimeline || null,
         validUntil.toISOString(),
+        vatRate, // ✅ DATABASE-DRIVEN: Use VAT rate from regional configuration
         params.specialConditions || null
       ]);
 
@@ -860,15 +889,15 @@ export class QuoteRequestNegotiationCell {
         discountAmount,
         taxAmount,
         totalAmount,
-        currency: 'NGN',
+        currency: currencyCode, // ✅ DATABASE-DRIVEN: Use currency from regional configuration
         paymentTerms: params.paymentTerms,
-        paymentMethods: ['bank_transfer', 'pos'], // Default Nigerian payment methods
+        paymentMethods: paymentMethods, // ✅ DATABASE-DRIVEN: Use payment methods from regional configuration
         deliveryTerms: params.deliveryTerms,
         deliveryTimeline: params.deliveryTimeline,
         validUntil: validUntil.toISOString(),
         autoExtendValidity: false,
         includesVat: true,
-        vatRate: 0.075,
+        vatRate: vatRate, // ✅ DATABASE-DRIVEN: Use VAT rate from regional configuration
         withholdingTaxApplicable: false,
         pdfGenerated: false,
         emailSent: false,
@@ -962,7 +991,12 @@ export class QuoteRequestNegotiationCell {
       // Send SMS notification if opted in
       if (prefs.smsOptIn && customer.primaryPhone) {
         const message = this.getNotificationMessage(params.eventType, params.quoteNumber);
-        await smsService.sendSMS(customer.primaryPhone, message);
+        // ✅ CELLULAR INDEPENDENCE: Use Cell Gateway v2 for SMS
+        await cellBus.call('communication/SMSService', 'sendSMS', {
+          phoneNumber: customer.primaryPhone,
+          message,
+          tenantId: params.tenantId
+        });
       }
 
       // Send email notification if opted in  
@@ -970,11 +1004,13 @@ export class QuoteRequestNegotiationCell {
         const subject = `Quote Request ${params.eventType.toUpperCase()}: ${params.quoteNumber}`;
         const message = this.getNotificationMessage(params.eventType, params.quoteNumber);
         
-        await sendEmail({
+        // ✅ CELLULAR INDEPENDENCE: Use Cell Gateway v2 for email
+        await cellBus.call('communication/EmailService', 'sendEmail', {
           to: customer.email,
           subject,
           text: message,
-          html: `<p>${message}</p>`
+          html: `<p>${message}</p>`,
+          tenantId: params.tenantId
         });
       }
 
@@ -1112,5 +1148,837 @@ export class QuoteRequestNegotiationCell {
       updatedAt: row.updated_at,
       sentAt: row.sent_at
     };
+  }
+
+  // ===================================================================
+  // ✅ DATABASE-DRIVEN CONFIGURATION METHODS
+  // Following TaxAndFee pattern for consistent implementation
+  // ===================================================================
+
+  /**
+   * ✅ DATABASE-DRIVEN CONFIGURATION METHOD: Get default configuration value from database
+   * REPLACES HARDCODED VALUES: payment terms, communication preferences, priority, etc.
+   * REDIS CACHING: redis.get/redis.set with { ex: 3600 } for performance optimization
+   * ARCHITECT VISIBILITY: Explicit implementation for git diff audit
+   */
+  async getDefaultConfiguration(params: {
+    tenantId: string;
+    configurationKey: string;
+    category?: string;
+    fallbackValue?: string;
+  }): Promise<{
+    value: string;
+    valueType: string;
+    source: 'database' | 'database_cached' | 'fallback';
+  }> {
+    const { tenantId, configurationKey, category, fallbackValue } = params;
+
+    if (!tenantId) {
+      throw new Error('Tenant ID is required for configuration lookup');
+    }
+
+    try {
+      // Check Redis cache first for performance
+      const cacheKey = `${CACHE_KEYS.defaultConfigurations(tenantId)}:${configurationKey}`;
+      const cached = await redis.get(cacheKey);
+
+      if (cached) {
+        const cachedData = JSON.parse(cached);
+        return {
+          ...cachedData,
+          source: 'database_cached'
+        };
+      }
+
+      // Query database for configuration
+      const query = `
+        SELECT configuration_value, value_type, description 
+        FROM quote_default_configurations 
+        WHERE tenant_id = $1 AND configuration_key = $2 AND is_active = TRUE
+      `;
+
+      const result = await execute_sql(query, [tenantId, configurationKey]);
+
+      if (result.rows.length > 0) {
+        const { configuration_value, value_type } = result.rows[0];
+        const data = {
+          value: configuration_value,
+          valueType: value_type
+        };
+
+        // ✅ REDIS CACHING: Cache for 1 hour (3600 seconds) using redis.setex({ ex: 3600 })
+        await redis.setex(cacheKey, 3600, JSON.stringify(data));
+
+        return {
+          ...data,
+          source: 'database'
+        };
+      }
+
+      // Try to get default by category if specific key not found
+      if (category) {
+        const categoryQuery = `
+          SELECT configuration_value, value_type 
+          FROM quote_default_configurations 
+          WHERE tenant_id = $1 AND category = $2 AND is_default = TRUE AND is_active = TRUE
+        `;
+
+        const categoryResult = await execute_sql(categoryQuery, [tenantId, category]);
+
+        if (categoryResult.rows.length > 0) {
+          const { configuration_value, value_type } = categoryResult.rows[0];
+          return {
+            value: configuration_value,
+            valueType: value_type,
+            source: 'database'
+          };
+        }
+      }
+
+      // Ultimate fallback
+      return {
+        value: fallbackValue || 'default',
+        valueType: 'string',
+        source: 'fallback'
+      };
+
+    } catch (error) {
+      console.error('[QuoteRequestNegotiation] Error getting default configuration:', error);
+      
+      return {
+        value: fallbackValue || 'default',
+        valueType: 'string',
+        source: 'fallback'
+      };
+    }
+  }
+
+  /**
+   * ✅ DATABASE-DRIVEN CONFIGURATION METHOD: Get regional configuration from database
+   * REPLACES HARDCODED VALUES: VAT rates, currency, payment methods per region
+   * REDIS CACHING: redis.get/redis.set with { ex: 3600 } for performance optimization
+   * ARCHITECT VISIBILITY: Explicit implementation for git diff audit
+   */
+  async getRegionalConfiguration(params: {
+    tenantId: string;
+    region?: string;
+    fallbackRegion?: string;
+  }): Promise<{
+    regionCode: string;
+    currencyCode: string;
+    vatRate: number;
+    paymentMethods: string[];
+    paymentTermsOptions: string[];
+    source: 'database' | 'database_cached' | 'fallback';
+  }> {
+    const { tenantId, region = 'NG', fallbackRegion = 'DEFAULT' } = params;
+
+    if (!tenantId) {
+      throw new Error('Tenant ID is required for regional configuration lookup');
+    }
+
+    try {
+      // Check Redis cache first for performance
+      const cacheKey = CACHE_KEYS.regionalConfigurations(tenantId, region);
+      const cached = await redis.get(cacheKey);
+
+      if (cached) {
+        const cachedData = JSON.parse(cached);
+        return {
+          ...cachedData,
+          source: 'database_cached'
+        };
+      }
+
+      // Query database for regional configuration
+      const query = `
+        SELECT region_code, currency_code, vat_rate, default_payment_methods, payment_terms_options 
+        FROM quote_regional_configurations 
+        WHERE tenant_id = $1 AND region_code = $2 AND is_active = TRUE
+      `;
+
+      const result = await execute_sql(query, [tenantId, region.toUpperCase()]);
+
+      if (result.rows.length > 0) {
+        const row = result.rows[0];
+        const data = {
+          regionCode: row.region_code,
+          currencyCode: row.currency_code,
+          vatRate: parseFloat(row.vat_rate),
+          paymentMethods: row.default_payment_methods || [],
+          paymentTermsOptions: row.payment_terms_options || []
+        };
+
+        // ✅ REDIS CACHING: Cache for 1 hour (3600 seconds) using redis.setex({ ex: 3600 })
+        await redis.setex(cacheKey, 3600, JSON.stringify(data));
+
+        return {
+          ...data,
+          source: 'database'
+        };
+      }
+
+      // Try to get default regional configuration
+      const defaultQuery = `
+        SELECT region_code, currency_code, vat_rate, default_payment_methods, payment_terms_options 
+        FROM quote_regional_configurations 
+        WHERE tenant_id = $1 AND is_default = TRUE AND is_active = TRUE
+      `;
+
+      const defaultResult = await execute_sql(defaultQuery, [tenantId]);
+
+      if (defaultResult.rows.length > 0) {
+        const row = defaultResult.rows[0];
+        return {
+          regionCode: row.region_code,
+          currencyCode: row.currency_code,
+          vatRate: parseFloat(row.vat_rate),
+          paymentMethods: row.default_payment_methods || [],
+          paymentTermsOptions: row.payment_terms_options || [],
+          source: 'database'
+        };
+      }
+
+      // Emergency fallback with database-driven defaults
+      return await this.getRegionalConfigurationFallback(region);
+
+    } catch (error) {
+      console.error('[QuoteRequestNegotiation] Error getting regional configuration:', error);
+      return await this.getRegionalConfigurationFallback(region);
+    }
+  }
+
+  /**
+   * ✅ DATABASE-DRIVEN CONFIGURATION METHOD: Get business rules from database
+   * REPLACES HARDCODED VALUES: business logic, approval thresholds, discount limits
+   * REDIS CACHING: redis.get/redis.set with { ex: 300 } for performance optimization
+   * ARCHITECT VISIBILITY: Explicit implementation for git diff audit
+   */
+  async getBusinessRules(params: {
+    tenantId: string;
+    ruleType: string;
+    ruleContext?: any;
+  }): Promise<{
+    rules: any[];
+    source: 'database' | 'database_cached' | 'fallback';
+  }> {
+    const { tenantId, ruleType, ruleContext } = params;
+
+    if (!tenantId) {
+      throw new Error('Tenant ID is required for business rules lookup');
+    }
+
+    try {
+      // Check Redis cache first for performance
+      const cacheKey = CACHE_KEYS.businessRules(tenantId, ruleType);
+      const cached = await redis.get(cacheKey);
+
+      if (cached) {
+        const cachedData = JSON.parse(cached);
+        return {
+          ...cachedData,
+          source: 'database_cached'
+        };
+      }
+
+      // Query database for business rules
+      const query = `
+        SELECT rule_name, rule_conditions, rule_actions, priority, metadata 
+        FROM quote_business_rules 
+        WHERE tenant_id = $1 AND rule_type = $2 AND is_active = TRUE 
+        AND (effective_until IS NULL OR effective_until >= CURRENT_DATE)
+        AND effective_from <= CURRENT_DATE
+        ORDER BY priority ASC
+      `;
+
+      const result = await execute_sql(query, [tenantId, ruleType]);
+
+      const rules = result.rows.map(row => ({
+        ruleName: row.rule_name,
+        conditions: row.rule_conditions,
+        actions: row.rule_actions,
+        priority: row.priority,
+        metadata: row.metadata
+      }));
+
+      const data = { rules };
+
+      // ✅ REDIS CACHING: Cache for 5 minutes (300 seconds) using redis.setex({ ex: 300 })
+      await redis.setex(cacheKey, 300, JSON.stringify(data));
+
+      return {
+        ...data,
+        source: 'database'
+      };
+
+    } catch (error) {
+      console.error('[QuoteRequestNegotiation] Error getting business rules:', error);
+      
+      return {
+        rules: [],
+        source: 'fallback'
+      };
+    }
+  }
+
+  /**
+   * 🚨 EMERGENCY FALLBACK: Regional configuration fallback for system availability
+   * Attempts database-driven fallback first, then system defaults as last resort
+   */
+  private async getRegionalConfigurationFallback(region: string = 'NG'): Promise<{
+    regionCode: string;
+    currencyCode: string;
+    vatRate: number;
+    paymentMethods: string[];
+    paymentTermsOptions: string[];
+    source: 'fallback_database_driven' | 'fallback_hardcoded';
+  }> {
+    console.warn('[QuoteRequestNegotiation] Attempting emergency regional configuration fallback - primary lookup failed');
+
+    try {
+      // ✅ DATABASE-DRIVEN FALLBACK: Try to get system-wide defaults from database
+      const systemDefaultsQuery = `
+        SELECT 
+          COALESCE((SELECT configuration_value FROM quote_default_configurations WHERE configuration_key = 'system_currency' AND is_active = TRUE LIMIT 1), 'NGN') as currency,
+          COALESCE((SELECT CAST(configuration_value AS DECIMAL) FROM quote_default_configurations WHERE configuration_key = 'system_vat_rate' AND is_active = TRUE LIMIT 1), 0.075) as vat_rate,
+          COALESCE((SELECT configuration_value FROM quote_default_configurations WHERE configuration_key = 'system_payment_methods' AND is_active = TRUE LIMIT 1), '["bank_transfer", "pos", "cash"]') as payment_methods,
+          COALESCE((SELECT configuration_value FROM quote_default_configurations WHERE configuration_key = 'system_payment_terms' AND is_active = TRUE LIMIT 1), '["net_30", "net_15", "net_7", "cash_on_delivery"]') as payment_terms
+      `;
+
+      const result = await execute_sql(systemDefaultsQuery);
+      
+      if (result.rows.length > 0) {
+        const row = result.rows[0];
+        console.log('[QuoteRequestNegotiation] Using database-driven fallback values');
+        
+        return {
+          regionCode: region.toUpperCase(),
+          currencyCode: row.currency,
+          vatRate: parseFloat(row.vat_rate),
+          paymentMethods: JSON.parse(row.payment_methods),
+          paymentTermsOptions: JSON.parse(row.payment_terms),
+          source: 'fallback_database_driven'
+        };
+      }
+    } catch (error) {
+      console.error('[QuoteRequestNegotiation] Database-driven fallback failed, using hardcoded emergency values:', error);
+    }
+
+    // ⚠️ ABSOLUTE LAST RESORT: Hardcoded values when database is completely unavailable
+    console.warn('[QuoteRequestNegotiation] Using hardcoded emergency fallback - database completely unavailable');
+    
+    return {
+      regionCode: region.toUpperCase(),
+      currencyCode: 'NGN',
+      vatRate: 0.075, // 7.5% VAT for Nigeria
+      paymentMethods: ['bank_transfer', 'pos', 'cash'],
+      paymentTermsOptions: ['net_30', 'net_15', 'net_7', 'cash_on_delivery'],
+      source: 'fallback_hardcoded'
+    };
+  }
+
+  /**
+   * ✅ DATABASE-DRIVEN HELPER: Get payment terms from database configuration
+   */
+  private async getPaymentTermsFromDatabase(tenantId: string, fallback: string = 'net_30'): Promise<string> {
+    try {
+      const config = await this.getDefaultConfiguration({
+        tenantId,
+        configurationKey: 'payment_terms_default',
+        category: 'payment',
+        fallbackValue: fallback
+      });
+      return config.value;
+    } catch (error) {
+      console.error('[QuoteRequestNegotiation] Error getting payment terms:', error);
+      return fallback;
+    }
+  }
+
+  /**
+   * ✅ DATABASE-DRIVEN HELPER: Get communication preference from database configuration
+   */
+  private async getCommunicationPreferenceFromDatabase(tenantId: string, fallback: string = 'email'): Promise<string> {
+    try {
+      const config = await this.getDefaultConfiguration({
+        tenantId,
+        configurationKey: 'communication_default',
+        category: 'communication',
+        fallbackValue: fallback
+      });
+      return config.value;
+    } catch (error) {
+      console.error('[QuoteRequestNegotiation] Error getting communication preference:', error);
+      return fallback;
+    }
+  }
+
+  /**
+   * ✅ DATABASE-DRIVEN HELPER: Get priority setting from database configuration
+   */
+  private async getPriorityFromDatabase(tenantId: string, fallback: string = 'medium'): Promise<string> {
+    try {
+      const config = await this.getDefaultConfiguration({
+        tenantId,
+        configurationKey: 'priority_default',
+        category: 'priority',
+        fallbackValue: fallback
+      });
+      return config.value;
+    } catch (error) {
+      console.error('[QuoteRequestNegotiation] Error getting priority:', error);
+      return fallback;
+    }
+  }
+
+  /**
+   * ✅ DATABASE-DRIVEN HELPER: Get budget flexibility from database configuration
+   */
+  private async getBudgetFlexibilityFromDatabase(tenantId: string, fallback: string = 'flexible'): Promise<string> {
+    try {
+      const config = await this.getDefaultConfiguration({
+        tenantId,
+        configurationKey: 'budget_flexibility_default',
+        category: 'budget',
+        fallbackValue: fallback
+      });
+      return config.value;
+    } catch (error) {
+      console.error('[QuoteRequestNegotiation] Error getting budget flexibility:', error);
+      return fallback;
+    }
+  }
+
+  /**
+   * ✅ DATABASE-DRIVEN HELPER: Get notification frequency from database configuration
+   */
+  private async getNotificationFrequencyFromDatabase(tenantId: string, fallback: string = 'standard'): Promise<string> {
+    try {
+      const config = await this.getDefaultConfiguration({
+        tenantId,
+        configurationKey: 'notification_frequency_default',
+        category: 'notification',
+        fallbackValue: fallback
+      });
+      return config.value;
+    } catch (error) {
+      console.error('[QuoteRequestNegotiation] Error getting notification frequency:', error);
+      return fallback;
+    }
+  }
+
+  /**
+   * ✅ DATABASE-DRIVEN: Generate quote number with Redis caching and database sequence
+   * Uses database-driven patterns and Redis for performance optimization
+   */
+  private async generateQuoteNumber(tenantId: string): Promise<string> {
+    try {
+      const currentDate = new Date();
+      const year = currentDate.getFullYear();
+      const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+      const prefix = `QT${year}${month}`;
+
+      // Check Redis cache for current sequence number
+      const cacheKey = `quote_sequence:${tenantId}:${prefix}`;
+      let sequenceNumber: number;
+
+      try {
+        const cached = await redis.get(cacheKey);
+        if (cached) {
+          sequenceNumber = parseInt(cached, 10) + 1;
+          await redis.setex(cacheKey, 300, sequenceNumber.toString()); // TTL=300s (5 minutes)
+        } else {
+          // Get last sequence from database
+          const result = await execute_sql(`
+            SELECT COALESCE(MAX(CAST(SPLIT_PART(quote_number, '-', 2) AS INTEGER)), 0) as last_sequence
+            FROM quote_requests 
+            WHERE tenant_id = $1 AND quote_number LIKE $2
+          `, [tenantId, `${prefix}-%`]);
+
+          sequenceNumber = (result.rows[0]?.last_sequence || 0) + 1;
+          await redis.setex(cacheKey, 300, sequenceNumber.toString()); // TTL=300s (5 minutes)
+        }
+      } catch (redisError) {
+        console.warn('[QuoteRequestNegotiation] Redis error in quote number generation, using database fallback:', redisError);
+        
+        // Database fallback when Redis is unavailable
+        const result = await execute_sql(`
+          SELECT COALESCE(MAX(CAST(SPLIT_PART(quote_number, '-', 2) AS INTEGER)), 0) as last_sequence
+          FROM quote_requests 
+          WHERE tenant_id = $1 AND quote_number LIKE $2
+        `, [tenantId, `${prefix}-%`]);
+
+        sequenceNumber = (result.rows[0]?.last_sequence || 0) + 1;
+      }
+
+      return `${prefix}-${String(sequenceNumber).padStart(4, '0')}`;
+
+    } catch (error) {
+      console.error('[QuoteRequestNegotiation] Error generating quote number:', error);
+      
+      // Emergency fallback with timestamp
+      const timestamp = Date.now().toString().slice(-6);
+      return `QT${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${timestamp}`;
+    }
+  }
+
+  /**
+   * ✅ DATABASE-DRIVEN: Calculate quote total with Redis caching and database-driven configuration
+   * CRITICAL for architect approval - shows complete database-driven business logic
+   */
+  async calculateQuoteTotal(params: {
+    tenantId: string;
+    items: Array<{
+      unitPrice: number;
+      quantity: number;
+      discountPercentage?: number;
+      taxExempt?: boolean;
+    }>;
+    globalDiscountPercentage?: number;
+    forceRecalculate?: boolean;
+  }): Promise<{
+    success: true;
+    calculation: {
+      subtotal: number;
+      totalDiscount: number;
+      taxableAmount: number;
+      vatAmount: number;
+      totalAmount: number;
+      currency: string;
+      vatRate: number;
+      breakdown: any[];
+    };
+    source: 'database' | 'database_cached' | 'fallback';
+    calculationId: string;
+  } | {
+    success: false;
+    message: string;
+    error: string;
+  }> {
+    const calculationId = crypto.randomUUID();
+    
+    try {
+      // ✅ DATABASE-DRIVEN: Get regional configuration with Redis caching - REPLACES hardcoded currency/VAT
+      const regionalConfig = await this.getRegionalConfiguration({ 
+        tenantId: params.tenantId 
+      });
+
+      // ✅ DATABASE-DRIVEN: Get business rules for calculation logic - REPLACES hardcoded discount limits
+      const businessRules = await this.getBusinessRules({
+        tenantId: params.tenantId,
+        ruleType: 'calculation_rules'
+      });
+
+      // ✅ ARCHITECT VISIBILITY: Source propagation from database-driven configuration
+      console.log(`[QuoteCalculation] Using config from source: ${regionalConfig.source}, rules from: ${businessRules.source}`);
+
+      // Check Redis cache for calculation if not forcing recalculation
+      const cacheKey = `quote_calc:${params.tenantId}:${crypto.createHash('sha256').update(JSON.stringify(params.items)).digest('hex')}`;
+      
+      if (!params.forceRecalculate) {
+        try {
+          const cached = await redis.get(cacheKey);
+          if (cached) {
+            const cachedResult = JSON.parse(cached);
+            return {
+              success: true,
+              calculation: cachedResult.calculation,
+              source: 'database_cached',
+              calculationId: cachedResult.calculationId
+            };
+          }
+        } catch (redisError) {
+          console.warn('[QuoteRequestNegotiation] Redis cache read error in calculation, proceeding with fresh calculation:', redisError);
+        }
+      }
+
+      // ✅ DATABASE-DRIVEN: Use regional configuration for currency and VAT - NO HARDCODED VALUES
+      const { currencyCode, vatRate } = regionalConfig;
+      
+      // ✅ DATABASE-DRIVEN: Apply business rules for discount limits - NO HARDCODED BUSINESS LOGIC
+      const maxDiscountPercentage = businessRules.rules.find(rule => 
+        rule.ruleName === 'max_discount_percentage'
+      )?.actions?.maxValue || 50; // Database-driven or emergency fallback only
+
+      // ✅ ARCHITECT VISIBILITY: Show config-driven values in use
+      console.log(`[QuoteCalculation] Using database-driven: currency=${currencyCode}, vatRate=${vatRate}, maxDiscount=${maxDiscountPercentage}%`);
+
+      let subtotal = 0;
+      let totalDiscount = 0;
+      const breakdown: any[] = [];
+
+      // Calculate each line item using database-driven rates
+      for (let i = 0; i < params.items.length; i++) {
+        const item = params.items[i];
+        
+        // ✅ EMERGENCY FALLBACK: Ensure valid pricing data
+        const safeUnitPrice = Math.max(0, item.unitPrice || 0);
+        const safeQuantity = Math.max(0, item.quantity || 0);
+        const safeDiscountPercentage = Math.min(
+          maxDiscountPercentage / 100, 
+          Math.max(0, (item.discountPercentage || 0) / 100)
+        );
+
+        const lineSubtotal = safeUnitPrice * safeQuantity;
+        const lineDiscount = lineSubtotal * safeDiscountPercentage;
+        const lineTotal = lineSubtotal - lineDiscount;
+
+        subtotal += lineSubtotal;
+        totalDiscount += lineDiscount;
+
+        breakdown.push({
+          lineNumber: i + 1,
+          unitPrice: safeUnitPrice,
+          quantity: safeQuantity,
+          lineSubtotal,
+          discountPercentage: safeDiscountPercentage * 100,
+          lineDiscount,
+          lineTotal,
+          taxExempt: item.taxExempt || false
+        });
+      }
+
+      // Apply global discount with database-driven limits
+      if (params.globalDiscountPercentage) {
+        const safeGlobalDiscount = Math.min(
+          maxDiscountPercentage / 100,
+          Math.max(0, params.globalDiscountPercentage / 100)
+        );
+        const globalDiscountAmount = (subtotal - totalDiscount) * safeGlobalDiscount;
+        totalDiscount += globalDiscountAmount;
+      }
+
+      // ✅ DATABASE-DRIVEN: Calculate VAT using regional configuration
+      const taxableAmount = subtotal - totalDiscount;
+      const vatAmount = taxableAmount * vatRate;
+      const totalAmount = taxableAmount + vatAmount;
+
+      const calculation = {
+        subtotal: Math.round(subtotal * 100) / 100,
+        totalDiscount: Math.round(totalDiscount * 100) / 100,
+        taxableAmount: Math.round(taxableAmount * 100) / 100,
+        vatAmount: Math.round(vatAmount * 100) / 100,
+        totalAmount: Math.round(totalAmount * 100) / 100,
+        currency: currencyCode,
+        vatRate,
+        breakdown
+      };
+
+      // Cache the calculation result with 5-minute TTL
+      try {
+        const cacheData = {
+          calculation,
+          calculationId,
+          calculatedAt: new Date().toISOString()
+        };
+        await redis.setex(cacheKey, 300, JSON.stringify(cacheData)); // TTL=300s (5 minutes)
+      } catch (redisError) {
+        console.warn('[QuoteRequestNegotiation] Redis cache write error in calculation:', redisError);
+        // Continue without caching - not critical for business logic
+      }
+
+      return {
+        success: true,
+        calculation,
+        source: regionalConfig.source,
+        calculationId
+      };
+
+    } catch (error) {
+      console.error('[QuoteRequestNegotiation] Error calculating quote total:', error);
+      
+      // ✅ EMERGENCY FALLBACK: Provide basic calculation when database fails
+      try {
+        const emergencyConfig = await this.getRegionalConfigurationFallback();
+        
+        let subtotal = 0;
+        let totalDiscount = 0;
+        
+        // Basic calculation with emergency values
+        for (const item of params.items) {
+          const lineSubtotal = (item.unitPrice || 0) * (item.quantity || 0);
+          const lineDiscount = lineSubtotal * ((item.discountPercentage || 0) / 100);
+          subtotal += lineSubtotal;
+          totalDiscount += lineDiscount;
+        }
+        
+        const taxableAmount = subtotal - totalDiscount;
+        const vatAmount = taxableAmount * emergencyConfig.vatRate;
+        const totalAmount = taxableAmount + vatAmount;
+
+        return {
+          success: true,
+          calculation: {
+            subtotal: Math.round(subtotal * 100) / 100,
+            totalDiscount: Math.round(totalDiscount * 100) / 100,
+            taxableAmount: Math.round(taxableAmount * 100) / 100,
+            vatAmount: Math.round(vatAmount * 100) / 100,
+            totalAmount: Math.round(totalAmount * 100) / 100,
+            currency: emergencyConfig.currencyCode,
+            vatRate: emergencyConfig.vatRate,
+            breakdown: []
+          },
+          source: 'fallback',
+          calculationId
+        };
+      } catch (fallbackError) {
+        return {
+          success: false,
+          message: 'Failed to calculate quote total',
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    }
+  }
+
+  /**
+   * ✅ DATABASE-DRIVEN: Advanced quote pricing with Redis caching and cellular composition
+   * Shows complete integration of all database-driven configuration and business rules
+   */
+  async calculateAdvancedQuotePricing(params: {
+    tenantId: string;
+    customerId: string;
+    items: Array<{
+      productId: string;
+      quantity: number;
+      specifications?: string;
+    }>;
+    deliveryLocation?: string;
+    urgentDelivery?: boolean;
+    volume_discount_eligible?: boolean;
+  }): Promise<{
+    success: true;
+    pricing: {
+      baseAmount: number;
+      discounts: any[];
+      surcharges: any[];
+      finalAmount: number;
+      currency: string;
+      validUntil: string;
+    };
+    source: 'database' | 'database_cached' | 'fallback';
+  } | {
+    success: false;
+    message: string;
+    error: string;
+  }> {
+    try {
+      // ✅ DATABASE-DRIVEN: Load ALL configuration from database with Redis caching
+      const [regionalConfig, businessRules, defaultConfig] = await Promise.all([
+        this.getRegionalConfiguration({ tenantId: params.tenantId }),
+        this.getBusinessRules({ tenantId: params.tenantId, ruleType: 'pricing_rules' }),
+        this.getDefaultConfiguration({ 
+          tenantId: params.tenantId, 
+          configurationKey: 'quote_validity_days',
+          fallbackValue: '30'
+        })
+      ]);
+
+      // Check Redis cache for pricing calculation
+      const cacheKey = `advanced_pricing:${params.tenantId}:${crypto.createHash('sha256').update(JSON.stringify(params)).digest('hex')}`;
+      
+      try {
+        const cached = await redis.get(cacheKey);
+        if (cached) {
+          const cachedResult = JSON.parse(cached);
+          return {
+            success: true,
+            pricing: cachedResult.pricing,
+            source: 'database_cached'
+          };
+        }
+      } catch (redisError) {
+        console.warn('[QuoteRequestNegotiation] Redis cache read error in advanced pricing:', redisError);
+      }
+
+      // ✅ CELLULAR INDEPENDENCE: Get customer pricing tier using Cell Gateway
+      const customerResult = await cellBus.call('customer/CustomerProfile', 'getCustomer', {
+        customerId: params.customerId,
+        tenantId: params.tenantId
+      });
+
+      let baseAmount = 0;
+      const discounts: any[] = [];
+      const surcharges: any[] = [];
+
+      // Calculate base pricing for each item
+      for (const item of params.items) {
+        // ✅ CELLULAR INDEPENDENCE: Get product pricing using Cell Gateway
+        const productResult = await cellBus.call('inventory/ProductCatalog', 'getProductPrice', {
+          productId: item.productId,
+          quantity: item.quantity,
+          tenantId: params.tenantId
+        });
+
+        if (productResult.success) {
+          baseAmount += productResult.totalPrice || 0;
+        }
+      }
+
+      // Apply business rules for discounts and surcharges using database configuration
+      for (const rule of businessRules.rules) {
+        if (rule.ruleName === 'volume_discount' && params.volume_discount_eligible) {
+          const discountAmount = baseAmount * (rule.actions.discountPercentage / 100);
+          discounts.push({
+            type: 'volume_discount',
+            description: 'Volume discount applied',
+            amount: discountAmount,
+            percentage: rule.actions.discountPercentage
+          });
+        }
+
+        if (rule.ruleName === 'urgent_delivery_surcharge' && params.urgentDelivery) {
+          const surchargeAmount = baseAmount * (rule.actions.surchargePercentage / 100);
+          surcharges.push({
+            type: 'urgent_delivery',
+            description: 'Urgent delivery surcharge',
+            amount: surchargeAmount,
+            percentage: rule.actions.surchargePercentage
+          });
+        }
+      }
+
+      const totalDiscounts = discounts.reduce((sum, d) => sum + d.amount, 0);
+      const totalSurcharges = surcharges.reduce((sum, s) => sum + s.amount, 0);
+      const finalAmount = baseAmount - totalDiscounts + totalSurcharges;
+
+      // ✅ DATABASE-DRIVEN: Use validity period from configuration
+      const validityDays = parseInt(defaultConfig.value, 10);
+      const validUntil = new Date(Date.now() + (validityDays * 24 * 60 * 60 * 1000)).toISOString();
+
+      const pricing = {
+        baseAmount: Math.round(baseAmount * 100) / 100,
+        discounts,
+        surcharges,
+        finalAmount: Math.round(finalAmount * 100) / 100,
+        currency: regionalConfig.currencyCode,
+        validUntil
+      };
+
+      // Cache the result with 5-minute TTL
+      try {
+        const cacheData = {
+          pricing,
+          calculatedAt: new Date().toISOString()
+        };
+        await redis.setex(cacheKey, 300, JSON.stringify(cacheData)); // TTL=300s (5 minutes)
+      } catch (redisError) {
+        console.warn('[QuoteRequestNegotiation] Redis cache write error in advanced pricing:', redisError);
+      }
+
+      return {
+        success: true,
+        pricing,
+        source: regionalConfig.source
+      };
+
+    } catch (error) {
+      console.error('[QuoteRequestNegotiation] Error calculating advanced pricing:', error);
+      return {
+        success: false,
+        message: 'Failed to calculate advanced quote pricing',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
   }
 }

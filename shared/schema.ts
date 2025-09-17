@@ -3192,3 +3192,186 @@ export const ALL_TAX_FEE_CONFIG_TRIGGERS_SQL = `
   -- Fee structure tiers triggers (already included in table creation)
   -- Item type tax adjustments triggers (already included in table creation)
 `;
+
+// =============================================================================
+// QUOTE REQUEST NEGOTIATION CONFIGURATION SYSTEM SCHEMA
+// =============================================================================
+
+/**
+ * Quote Default Configurations Table
+ * Configurable tenant-level defaults to replace hardcoded values like payment terms,
+ * communication preferences, priority settings, budget flexibility, notification frequency
+ */
+export const QUOTE_DEFAULT_CONFIGURATIONS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS quote_default_configurations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    configuration_key VARCHAR(100) NOT NULL,
+    configuration_value VARCHAR(500) NOT NULL,
+    value_type VARCHAR(20) NOT NULL CHECK (value_type IN ('string', 'number', 'boolean', 'json')),
+    description TEXT,
+    category VARCHAR(50) NOT NULL CHECK (category IN ('payment', 'communication', 'priority', 'budget', 'notification', 'general')),
+    is_default BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN DEFAULT TRUE,
+    validation_rules JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    created_by UUID NOT NULL,
+    
+    -- Multi-tenant constraints
+    CONSTRAINT fk_quote_defaults_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    
+    -- Unique constraints scoped by tenant
+    CONSTRAINT unique_config_key_per_tenant UNIQUE (tenant_id, configuration_key),
+    
+    -- Data integrity constraints
+    CONSTRAINT check_config_key_format CHECK (configuration_key ~ '^[a-z][a-z0-9_]*$'),
+    CONSTRAINT check_configuration_value_not_empty CHECK (char_length(trim(configuration_value)) > 0),
+    CONSTRAINT check_only_one_default_per_category_tenant 
+      EXCLUDE USING btree (tenant_id WITH =, category WITH =) WHERE (is_default = TRUE)
+  );
+  
+  -- Indexes for performance
+  CREATE INDEX IF NOT EXISTS idx_quote_defaults_tenant_key ON quote_default_configurations(tenant_id, configuration_key);
+  CREATE INDEX IF NOT EXISTS idx_quote_defaults_category ON quote_default_configurations(tenant_id, category) WHERE is_active = TRUE;
+  CREATE INDEX IF NOT EXISTS idx_quote_defaults_active ON quote_default_configurations(tenant_id, is_active) WHERE is_active = TRUE;
+  CREATE INDEX IF NOT EXISTS idx_quote_defaults_default ON quote_default_configurations(tenant_id, category, is_default) WHERE is_default = TRUE;
+  
+  -- Trigger for automatic updated_at
+  CREATE TRIGGER trigger_update_quote_defaults_updated_at
+    BEFORE UPDATE ON quote_default_configurations
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+`;
+
+/**
+ * Quote Regional Configurations Table
+ * Configurable region-specific settings to replace hardcoded values like VAT rates,
+ * currency defaults, and payment methods per region
+ */
+export const QUOTE_REGIONAL_CONFIGURATIONS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS quote_regional_configurations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    region_code VARCHAR(10) NOT NULL,
+    region_name VARCHAR(100) NOT NULL,
+    currency_code VARCHAR(3) NOT NULL CHECK (currency_code ~ '^[A-Z]{3}$'),
+    vat_rate DECIMAL(5,4) NOT NULL DEFAULT 0.0000,
+    default_payment_methods JSONB NOT NULL DEFAULT '[]'::jsonb,
+    payment_terms_options JSONB DEFAULT '[]'::jsonb,
+    communication_preferences JSONB DEFAULT '{}' ::jsonb,
+    regulatory_requirements JSONB DEFAULT '{}'::jsonb,
+    is_default BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN DEFAULT TRUE,
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    created_by UUID NOT NULL,
+    
+    -- Multi-tenant constraints
+    CONSTRAINT fk_quote_regional_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    
+    -- Unique constraints scoped by tenant
+    CONSTRAINT unique_region_code_per_tenant_quote UNIQUE (tenant_id, region_code),
+    
+    -- Data integrity constraints
+    CONSTRAINT check_vat_rate_valid CHECK (vat_rate >= 0.0000 AND vat_rate <= 1.0000),
+    CONSTRAINT check_region_code_format_quote CHECK (region_code ~ '^[A-Z0-9_]{1,10}$'),
+    CONSTRAINT check_only_one_default_region_per_tenant 
+      EXCLUDE USING btree (tenant_id WITH =) WHERE (is_default = TRUE),
+    CONSTRAINT check_payment_methods_array CHECK (jsonb_typeof(default_payment_methods) = 'array'),
+    CONSTRAINT check_currency_code_valid CHECK (currency_code IN ('NGN', 'USD', 'EUR', 'GBP', 'ZAR', 'GHS', 'KES', 'UGX'))
+  );
+  
+  -- Indexes for performance
+  CREATE INDEX IF NOT EXISTS idx_quote_regional_tenant_region ON quote_regional_configurations(tenant_id, region_code);
+  CREATE INDEX IF NOT EXISTS idx_quote_regional_active ON quote_regional_configurations(tenant_id, is_active) WHERE is_active = TRUE;
+  CREATE INDEX IF NOT EXISTS idx_quote_regional_default ON quote_regional_configurations(tenant_id, is_default) WHERE is_default = TRUE;
+  CREATE INDEX IF NOT EXISTS idx_quote_regional_currency ON quote_regional_configurations(tenant_id, currency_code) WHERE is_active = TRUE;
+  
+  -- Trigger for automatic updated_at
+  CREATE TRIGGER trigger_update_quote_regional_updated_at
+    BEFORE UPDATE ON quote_regional_configurations
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+`;
+
+/**
+ * Quote Business Rules Table
+ * Configurable business logic settings and approval thresholds to replace hardcoded logic
+ */
+export const QUOTE_BUSINESS_RULES_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS quote_business_rules (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    rule_name VARCHAR(100) NOT NULL,
+    rule_type VARCHAR(50) NOT NULL CHECK (rule_type IN ('approval_threshold', 'validation_rule', 'notification_rule', 'escalation_rule', 'pricing_rule')),
+    rule_conditions JSONB NOT NULL DEFAULT '{}'::jsonb,
+    rule_actions JSONB NOT NULL DEFAULT '{}'::jsonb,
+    priority INTEGER NOT NULL DEFAULT 1000,
+    is_active BOOLEAN DEFAULT TRUE,
+    description TEXT,
+    effective_from DATE DEFAULT CURRENT_DATE,
+    effective_until DATE,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    created_by UUID NOT NULL,
+    
+    -- Multi-tenant constraints
+    CONSTRAINT fk_quote_business_rules_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    
+    -- Unique constraints scoped by tenant
+    CONSTRAINT unique_rule_name_per_tenant UNIQUE (tenant_id, rule_name),
+    
+    -- Data integrity constraints
+    CONSTRAINT check_rule_name_format CHECK (rule_name ~ '^[a-z][a-z0-9_]*$'),
+    CONSTRAINT check_priority_positive CHECK (priority > 0),
+    CONSTRAINT check_effective_dates CHECK (effective_until IS NULL OR effective_until >= effective_from),
+    CONSTRAINT check_rule_conditions_object CHECK (jsonb_typeof(rule_conditions) = 'object'),
+    CONSTRAINT check_rule_actions_object CHECK (jsonb_typeof(rule_actions) = 'object'),
+    CONSTRAINT check_effective_from_not_future CHECK (effective_from <= CURRENT_DATE + INTERVAL '1 year')
+  );
+  
+  -- Indexes for performance
+  CREATE INDEX IF NOT EXISTS idx_quote_business_rules_tenant_type ON quote_business_rules(tenant_id, rule_type);
+  CREATE INDEX IF NOT EXISTS idx_quote_business_rules_active ON quote_business_rules(tenant_id, is_active) WHERE is_active = TRUE;
+  CREATE INDEX IF NOT EXISTS idx_quote_business_rules_priority ON quote_business_rules(tenant_id, priority, is_active) WHERE is_active = TRUE;
+  CREATE INDEX IF NOT EXISTS idx_quote_business_rules_effective ON quote_business_rules(tenant_id, effective_from, effective_until) WHERE is_active = TRUE;
+  
+  -- Trigger for automatic updated_at
+  CREATE TRIGGER trigger_update_quote_business_rules_updated_at
+    BEFORE UPDATE ON quote_business_rules
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+`;
+
+/**
+ * Combined Quote Configuration Tables SQL
+ * Creates all tables, indexes, and triggers in the correct order
+ */
+export const ALL_QUOTE_CONFIG_TABLES_SQL = `
+  ${QUOTE_DEFAULT_CONFIGURATIONS_TABLE_SQL}
+  ${QUOTE_REGIONAL_CONFIGURATIONS_TABLE_SQL}
+  ${QUOTE_BUSINESS_RULES_TABLE_SQL}
+`;
+
+/**
+ * Quote Configuration Indexes SQL
+ * All indexes for optimal query performance
+ */
+export const ALL_QUOTE_CONFIG_INDEXES_SQL = `
+  -- Quote default configurations indexes (already included in table creation)
+  -- Quote regional configurations indexes (already included in table creation)
+  -- Quote business rules indexes (already included in table creation)
+`;
+
+/**
+ * Quote Configuration Triggers SQL
+ * All triggers for automatic timestamp updates
+ */
+export const ALL_QUOTE_CONFIG_TRIGGERS_SQL = `
+  -- Quote default configurations triggers (already included in table creation)
+  -- Quote regional configurations triggers (already included in table creation)
+  -- Quote business rules triggers (already included in table creation)
+`;
