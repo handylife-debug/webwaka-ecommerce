@@ -1,1 +1,69 @@
-IyBXZWJXYWthIEUtQ29tbWVyY2UgUGxhdGZvcm0gLSBCaW9sb2dpY2FsIEhpZXJhcmNoaWNhbCBTeXN0ZW0KCiMjIE92ZXJ2aWV3ClRoZSBXZWJXYWthIEUtQ29tbWVyY2UgUGxhdGZvcm0gaXMgYSBtdWx0aS12ZW5kb3IgZS1jb21tZXJjZSBzb2x1dGlvbiBidWlsdCB3aXRoIGEgYmlvbG9naWNhbCBoaWVyYXJjaGljYWwgc3lzdGVtIGFyY2hpdGVjdHVyZSwgZW1waGFzaXppbmcgY2VsbHVsYXIgaW5kZXBlbmRlbmNlIGFuZCAxMDAlIGNvbXBvbmVudCByZXVzYWJpbGl0eS4gVGhlIHBsYXRmb3JtIGFpbXMgdG8gcHJvdmlkZSBhIHJvYnVzdCwgc2VjdXJlLCBhbmQgc2NhbGFibGUgc3lzdGVtIGZvciBvbmxpbmUgY29tbWVyY2UsIGluY2x1ZGluZyBzcGVjaWFsaXplZCBmZWF0dXJlcyBmb3IgdGhlIE5pZ2VyaWFuIG1hcmtldC4gS2V5IGNhcGFiaWxpdGllcyBpbmNsdWRlIG11bHRpLXZlbmRvciBtYW5hZ2VtZW50LCBvcmRlciBzcGxpdHRpbmcgYW5kIGZ1bGZpbGxtZW50LCBCMkIgYWNjZXNzIGNvbnRyb2wsIGFuZCBjb21wcmVoZW5zaXZlIHNlY3VyaXR5LgoKIyMgVXNlciBQcmVmZXJlbmNlcwotICoqQ2VsbHVsYXIgUmV1c2FiaWxpdHkqKjogSGFyZGNvZGVkIHJlcXVpcmVtZW50IC0gcmV1c2UgZXhpc3RpbmcgY2VsbHMgYW5kIGNvZGViYXNlIHdpdGhvdXQgZHVwbGljYXRpbmcgZnVuY3Rpb25hbGl0eQotICoqRG9jdW1lbnRhdGlvbioqOiBFYWNoIGNvbXBsZXRlZCBzdWJ0YXNrIG11c3QgYmUgZnVsbHkgZG9jdW1lbnRlZCBhbmQgcHVzaGVkIHRvIEdpdEh1YiBpbW1lZGlhdGVseQotICoqQXJjaGl0ZWN0dXJlKio6IEZvbGxvdyBlc3RhYmxpc2hlZCBjZWxsdWxhciBhcmNoaXRlY3R1cmUgcGF0dGVybiB3aXRoIGNsaWVudC50c3gvc2VydmVyLnRzIHN0cnVjdHVyZQotICoqU2VjdXJpdHkqKjogSW1wbGVtZW50IHByb3BlciBlbmNyeXB0aW9uLCBSQkFDIGF1dGhvcml6YXRpb24sIGFuZCB0ZW5hbnQgc2NvcGluZwotICoqSW50ZWdyYXRpb24qKjogUHVzaCBjb2RlIHRvIEdpdEh1YiBhZnRlciBlYWNoIG1ham9yIGNvbXBsZXRpb24gdXNpbmcgZXN0YWJsaXNoZWQgY29ubmVjdGlvbgoKIyMgU3lzdGVtIEFyY2hpdGVjdHVyZQoKIyMjIENvcmUgRGVzaWduIFByaW5jaXBsZXMKVGhlIHBsYXRmb3JtIGFkaGVyZXMgdG8gYSAiYmlvbG9naWNhbCBoaWVyYXJjaGljYWwgc3lzdGVtIiBhcmNoaXRlY3R1cmUsIHdoZXJlIGVhY2ggImNlbGwiIGlzIGEgZnVuZGFtZW50YWwsIDEwMCUgcmV1c2FibGUgZnVuY3Rpb25hbCB1bml0LiBUaGlzIGluY2x1ZGVzIHN0cmljdCBjZWxsdWxhciBpbmRlcGVuZGVuY2UsIGVsaW1pbmF0aW5nIGRpcmVjdCBjcm9zcy1jZWxsIGltcG9ydHMgYW5kIHJlbHlpbmcgc29sZWx5IG9uIENlbGwgQnVzIGNvbW11bmljYXRpb24uCgojIyMgVGVjaG5vbG9neSBTdGFjawotICoqRnJvbnRlbmQqKjogTmV4dC5qcyAxNCwgUmVhY3QgMTgsIFR5cGVTY3JpcHQsIFRhaWx3aW5kIENTUwotICoqQmFja2VuZCoqOiBOZXh0LmpzIEFQSSBSb3V0ZXMKLSAqKlVJIENvbXBvbmVudHMqKjogUmFkaXggVUksIEx1Y2lkZSBSZWFjdCBpY29ucwotICoqRGF0YWJhc2UqKjogUG9zdGdyZVNRTAotICoqQ2FjaGluZyoqOiBSZWRpcwotICoqQXV0aGVudGljYXRpb24qKjogQ29va2llLWJhc2VkIHNlc3Npb25zIHdpdGggSldULWxpa2UgdG9rZW5zCi0gKipTZWN1cml0eSoqOiBDb21wcmVoZW5zaXZlIHNlY3VyaXR5IGhhcmRlbmluZyBpbmNsdWRpbmcgSldULWJhc2VkIGF1dGhlbnRpY2F0aW9uLCB0ZW5hbnQgaXNvbGF0aW9uLCBTUUwgaW5qZWN0aW9uIHByZXZlbnRpb24sIENTUkYgcHJvdGVjdGlvbiwgYW5kIFJCQUMgYXV0aG9yaXphdGlvbi4KCiMjIyBLZXkgRmVhdHVyZXMgJiBJbXBsZW1lbnRhdGlvbnMKLSAqKkNlbGx1bGFyIFN0cnVjdHVyZSoqOiBPcmdhbml6ZWQgaW50byBgY2VsbHMvYCBkaXJlY3RvcnksIHdpdGggc3ViZGlyZWN0b3JpZXMgZm9yIGBlY29tbWVyY2UvYCBjb250YWluaW5nIGluZGVwZW5kZW50IGNlbGxzIGxpa2UgYFZlbmRvck9uYm9hcmRpbmdNYW5hZ2VtZW50YCwgYE11bHRpU3RvcmVNYXJrZXRwbGFjZWAsIGBPcmRlclNwbGl0dGluZ0Z1bGZpbGxtZW50YCwgYW5kIGBCMkJBY2Nlc3NDb250cm9sYC4KLSAqKlVJL1VYKio6IFV0aWxpemVzIFJhZGl4IFVJIGFuZCBUYWlsd2luZCBDU1MgZm9yIGEgY29uc2lzdGVudCBhbmQgbW9kZXJuIGRlc2lnbi4gVmVuZG9yIGFuZCBwYXJ0bmVyIGRhc2hib2FyZHMgZXh0ZW5kIGV4aXN0aW5nIGFyY2hpdGVjdHVyZXMgZm9yIHJldXNhYmlsaXR5LgotICoqTXVsdGktdGVuYW5jeSoqOiBEZXNpZ25lZCB3aXRoIHRlbmFudC1zY29wZWQgZGF0YSBhbmQgcHJvcGVyIGlzb2xhdGlvbi4KLSAqKkUtY29tbWVyY2UgQ2FwYWJpbGl0aWVzKio6CiAgICAtICoqVmVuZG9yIE9uYm9hcmRpbmcqKjogU3lzdGVtIGZvciB2ZW5kb3IgYXBwbGljYXRpb25zLCBidXNpbmVzcyBkZXRhaWxzLCB0YXggaW5mbywgYW5kIGFkbWluIGFwcHJvdmFsIHdvcmtmbG93cy4KICAgIC0gKipNdWx0aS1TdG9yZSBNYXJrZXRwbGFjZSoqOiBTZXBhcmF0ZSB2ZW5kb3IgZGFzaGJvYXJkcywgaW5kaXZpZHVhbCBzdG9yZSBwYWdlcyB3aXRoIGN1c3RvbSBicmFuZGluZywgcHJvZHVjdCBtYXBwaW5nLCBhbmQgc3RvcmUgbWFuYWdlbWVudC4KICAgIC0gKipPcmRlciBTcGxpdHRpbmcgJiBGdWxmaWxsbWVudCoqOiBBdXRvbWF0ZWQgbXVsdGktdmVuZG9yIG9yZGVyIHNwbGl0dGluZywgZnVsZmlsbG1lbnQgcm91dGluZywgYW5kIHVuaWZpZWQgY3VzdG9tZXIgdHJhY2tpbmcuCiAgICAtICoqQjJCIEFjY2VzcyBDb250cm9sKio6IE1hbmFnZW1lbnQgZm9yIHdob2xlc2FsZSBjdXN0b21lcnMsIGluY2x1ZGluZyBndWVzdCBwcmljZSBoaWRpbmcsIGNhdGVnb3J5IHJlc3RyaWN0aW9ucywgYW5kIGdyb3VwIG1hbmFnZW1lbnQuCi0gKipSZWdpb25hbCBGZWF0dXJlcyoqOiBJbmNsdWRlcyBzcGVjaWZpYyBmZWF0dXJlcyBmb3IgdGhlIE5pZ2VyaWFuIG1hcmtldCBzdWNoIGFzIE5haXJhIGN1cnJlbmN5IGRlZmF1bHRzLCBDQUMgcmVnaXN0cmF0aW9uLCB0YXggSUQsIGFuZCA3LjUlIFZBVCBjb21wbGlhbmNlLgoKIyMgRXh0ZXJuYWwgRGVwZW5kZW5jaWVzCi0gKipEYXRhYmFzZSoqOiBQb3N0Z3JlU1FMCi0gKipDYWNoaW5nKio6IFJlZGlzCi0gKipBdXRoZW50aWNhdGlvbioqOiBgam9zZWAgbGlicmFyeSBmb3IgSldUIHNpZ25pbmcKLSAqKlVJIExpYnJhcmllcyoqOiBSYWRpeCBVSSwgTHVjaWRlIFJlYWN0IChpY29ucykKLSAqKlZlcnNpb24gQ29udHJvbCoqOiBHaXRIdWI=
+# WebWaka E-Commerce Platform - Biological Hierarchical System
+
+## Overview
+The WebWaka E-Commerce Platform is a multi-vendor e-commerce solution built with a biological hierarchical system architecture, emphasizing cellular independence and 100% component reusability. The platform aims to provide a robust, secure, and scalable system for online commerce, including specialized features for the Nigerian market. Key capabilities include multi-vendor management, order splitting and fulfillment, B2B access control, and comprehensive security.
+
+## User Preferences
+- **Cellular Reusability**: Hardcoded requirement - reuse existing cells and codebase without duplicating functionality
+- **Documentation**: Each completed subtask must be fully documented and pushed to GitHub immediately
+- **Architecture**: Follow established cellular architecture pattern with client.tsx/server.ts structure
+- **Security**: Implement proper encryption, RBAC authorization, and tenant scoping
+- **Integration**: Push code to GitHub after each major completion using established connection
+
+## System Architecture
+
+### Core Design Principles
+The platform adheres to a "biological hierarchical system" architecture, where each "cell" is a fundamental, 100% reusable functional unit. This includes strict cellular independence, eliminating direct cross-cell imports and relying solely on Cell Bus communication.
+
+### Technology Stack
+- **Frontend**: Next.js 14, React 18, TypeScript, Tailwind CSS
+- **Backend**: Next.js API Routes
+- **UI Components**: Radix UI, Lucide React icons
+- **Database**: PostgreSQL
+- **Caching**: Redis
+- **Authentication**: Cookie-based sessions with JWT-like tokens
+- **Security**: Comprehensive security hardening including JWT-based authentication, tenant isolation, SQL injection prevention, CSRF protection, and RBAC authorization.
+
+### Key Features & Implementations
+- **Cellular Structure**: Organized into `cells/` directory, with subdirectories for `ecommerce/` containing independent cells like `VendorOnboardingManagement`, `MultiStoreMarketplace`, `OrderSplittingFulfillment`, and `B2BAccessControl`.
+- **UI/UX**: Utilizes Radix UI and Tailwind CSS for a consistent and modern design. Vendor and partner dashboards extend existing architectures for reusability.
+- **Multi-tenancy**: Designed with tenant-scoped data and proper isolation.
+- **E-commerce Capabilities**:
+    - **Vendor Onboarding**: System for vendor applications, business details, tax info, and admin approval workflows.
+    - **Multi-Store Marketplace**: Separate vendor dashboards, individual store pages with custom branding, product mapping, and store management.
+    - **Order Splitting & Fulfillment**: Automated multi-vendor order splitting, fulfillment routing, and unified customer tracking.
+    - **B2B Access Control**: Management for wholesale customers, including guest price hiding, category restrictions, and group management.
+- **Regional Features**: Includes specific features for the Nigerian market such as Naira currency defaults, CAC registration, tax ID, and 7.5% VAT compliance.
+
+## Phase 3: Cellular Independence Achievements
+
+### TaxAndFee Cell - Complete Cellular Independence ✅
+**Completion Date**: September 17, 2025  
+**Status**: ARCHITECT APPROVED - True cellular independence achieved
+
+**Major Transformations:**
+- **Hardcoded Logic Elimination**: Converted all static tax rates (7.5% VAT) and fee calculations to database-driven configuration using 3 multi-tenant tables: `tax_configurations`, `fee_structures`, `region_tax_multipliers`
+- **Gateway Migration Success**: Eliminated ALL direct cross-cell imports from WholesalePricingTiers and QuoteRequestNegotiation cells, converting 7+ direct calls to Cell Gateway v2 communication via `cellBus.call()`
+- **Infrastructure Fixes**: Removed temporary fallback logic in Cell API routes, establishing unified CellBus communication for all cells
+- **Multi-Tenant Security**: All operations require tenantId validation with proper database scoping and Redis caching per tenant
+- **Performance Optimization**: Implemented Redis caching for configuration lookups with tenant-specific cache keys
+
+**Test Coverage Implemented:**
+- Gateway contract tests (40+ scenarios) covering API validation, multi-tenant isolation, error handling, performance
+- Architectural verification tests with automated cross-cell import detection and compliance reporting
+- Health endpoint verification confirming database-driven configuration (hardcodedConfiguration=false)
+
+**Cellular Independence Verified:**
+- NO direct cross-cell imports detected in target areas
+- ALL inter-cell communication through Cell Gateway v2
+- Independent deployability achieved
+- Biological hierarchical system architecture principles enforced
+
+This establishes the proven pattern for migrating the remaining 52 cells in the system.
+
+## External Dependencies
+- **Database**: PostgreSQL
+- **Caching**: Redis
+- **Authentication**: `jose` library for JWT signing
+- **UI Libraries**: Radix UI, Lucide React (icons)
+- **Version Control**: GitHub
